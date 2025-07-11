@@ -1,0 +1,83 @@
+
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+# Help text function
+show_help() {
+  cat <<EOF
+Usage: sudo ./efs-mount [options]
+
+Options:
+  -y           Auto-run the mount command without prompt
+  -h, --help   Show this help message and exit
+  help         Show this help message and exit
+
+This script helps you interactively mount an AWS EFS filesystem using an access point.
+EOF
+}
+
+# Check for help flags
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help|help)
+      show_help
+      exit 0
+      ;;
+  esac
+done
+
+# Prompt for mount point, use default if none entered
+read -rp "Enter mount point [default: ./efs]: " MOUNT_POINT
+MOUNT_POINT=${MOUNT_POINT:-./efs}
+
+# Check for -y flag to auto-mount
+AUTO_MOUNT=false
+for arg in "$@"; do
+  if [[ "$arg" == "-y" ]]; then
+    AUTO_MOUNT=true
+  fi
+done
+
+# pick an AWS region
+region=$(aws ec2 describe-regions \
+  --query 'Regions[].RegionName' --output text | tr '\t' '\n' \
+  | fzy --prompt="Select AWS region > ")
+
+# pick an EFS filesystem (ID + optional Name tag)
+fs_choice=$(aws efs describe-file-systems --region "$region" \
+  --query 'FileSystems[].{ID:FileSystemId,Name:Tags[?Key==`Name`]|[0].Value}' \
+  --output text \
+  | awk '{ name=$2? " ("$2")":""; print $1 name }' \
+  | fzy --prompt="Select EFS filesystem > ")
+
+fs_id=${fs_choice%% *}
+
+# list only access points for that FS and pick one
+ap_choice=$(aws efs describe-access-points --region "$region" \
+  --file-system-id "$fs_id" \
+  --query 'AccessPoints[].{ID:AccessPointId,Path:RootDirectory.Path}' \
+  --output text \
+  | awk '{ print $1 " → " $2 }' \
+  | fzy --prompt="Select Access Point for $fs_id > ")
+
+ap_id=${ap_choice%% *}
+
+# Optionally create the dns name for the EFS filesystem
+dns="${fs_id}.efs.${region}.amazonaws.com"
+
+echo
+echo "🖇  Mount command:"
+echo "   sudo mount -t efs -o tls,accesspoint=${ap_id} ${fs_id}:/ ${MOUNT_POINT}"
+echo
+
+if [ "$AUTO_MOUNT" = true ]; then
+  mount -t efs -o tls,accesspoint=${ap_id} ${fs_id}:/ ${MOUNT_POINT}
+else
+  read -rp "Do you want to run the mount command now? [y/N]: " RUN_MOUNT
+  if [[ "$RUN_MOUNT" =~ ^[Yy]$ ]]; then
+    mount -t efs -o tls,accesspoint=${ap_id} ${fs_id}:/ ${MOUNT_POINT}
+  else
+    echo "Mount command not run. You can run it manually as shown above."
+  fi
+fi
