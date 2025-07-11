@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+
+PROFILE=$(aws configure list-profiles | fzy)
+
+# exit if no profile is selected
+if [ -z "$PROFILE" ]; then
+    exit 1
+fi
+
+echo "Selected profile: $PROFILE"
+
+CLUSTER=$(aws ecs list-clusters --profile "$PROFILE" | jq -r '.clusterArns[]' | fzy)
+
+# exit if no cluster is selected
+if [ -z "$CLUSTER" ]; then
+    exit 1
+fi
+
+echo "Selected cluster: $CLUSTER"
+
+SERVICE=$(aws ecs list-services --cluster "$CLUSTER" --profile "$PROFILE" | jq -r '.serviceArns[]' | fzy)
+
+# exit if no service is selected
+if [ -z "$SERVICE" ]; then
+    exit 1
+fi
+
+echo "Selected service: $SERVICE"
+
+TASK=$(aws ecs list-tasks --cluster "$CLUSTER" --service-name "$SERVICE" --profile "$PROFILE" | jq -r '.taskArns[]' | fzy)
+
+# exit if no task is selected
+if [ -z "$TASK" ]; then
+    exit 1
+fi
+
+echo "Selected task: $TASK"
+
+CONTAINER=$(aws ecs describe-tasks --cluster "$CLUSTER" --tasks "$TASK" --profile "$PROFILE" | jq -r '.tasks[0].containers[].name' | fzy)
+
+# exit if no container is selected
+if [ -z "$CONTAINER" ]; then
+    exit 1
+fi
+
+echo "Selected container: $CONTAINER"
+
+SHELL=$(echo -e "sh\nbash\nzsh" | fzy)
+
+# exit if no shell is selected
+if [ -z "$SHELL" ]; then
+    exit 1
+fi
+
+aws ecs execute-command \
+    --cluster "$CLUSTER" \
+    --task "$TASK" \
+    --container "$CONTAINER" \
+    --interactive \
+    --command "$SHELL" \
+    --profile "$PROFILE"
