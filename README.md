@@ -5,17 +5,20 @@ A collection of utility scripts for working with AWS services, designed to simpl
 ## 🚀 Quick Start
 
 1. **Clone the repository:**
+
    ```bash
    git clone https://github.com/aliciousness/aws-tools.git
    cd aws-tools
    ```
 
 2. **Set up Python environment:**
+
    ```bash
    ./pip-env
    ```
 
 3. **Make scripts executable:**
+
    ```bash
    chmod +x bin/*
    ```
@@ -29,14 +32,17 @@ A collection of utility scripts for working with AWS services, designed to simpl
 ## 📦 Available Tools
 
 ### Database Connection Tools
+
 - **[db-session](docs/db-session-README.md)** - Direct database connection via SSM port forwarding
 - **[db-session-helper](docs/db-session-helper-README.md)** - Interactive database connection with Parameter Store integration
 
-### ECS Container Tools  
+### ECS Container Tools
+
 - **[ecs-connect](docs/ecs-connect-README.md)** - Direct ECS container connection with specific parameters
 - **[ecs-shell-helper](docs/ecs-shell-helper-README.md)** - Interactive ECS container shell access
 
 ### File System Tools
+
 - **[efs-mnt](docs/efs-mnt-README.md)** - Interactive EFS filesystem mounting with access points
 
 ## 🛠️ Installation & Setup
@@ -59,6 +65,7 @@ The repository includes a `pip-env` script that automatically sets up a Python v
 ```
 
 **What `pip-env` does:**
+
 1. Removes any existing `venv/` directory
 2. Creates a new Python 3 virtual environment
 3. Activates the virtual environment
@@ -66,6 +73,7 @@ The repository includes a `pip-env` script that automatically sets up a Python v
 5. Updates `requirements.txt` with current package versions
 
 **Manual activation** (if needed later):
+
 ```bash
 source venv/bin/activate
 ```
@@ -89,12 +97,14 @@ sudo yum install fzf jq
 ## 🔧 Usage Patterns
 
 ### Direct Usage Scripts
+
 These scripts accept command-line arguments for direct operation:
 
 - `db-session` - Specify endpoint, port, target instance
 - `ecs-connect` - Specify cluster, service, container details
 
-### Interactive Helper Scripts  
+### Interactive Helper Scripts
+
 These scripts provide guided workflows with resource discovery:
 
 - `db-session-helper` - Interactive database connection setup
@@ -104,15 +114,17 @@ These scripts provide guided workflows with resource discovery:
 ### Example Workflows
 
 **Quick database connection:**
+
 ```bash
 # Direct approach
 ./bin/db-session -e mydb.region.rds.amazonaws.com -p 5432 -t i-1234567890abcdef0
 
-# Interactive approach  
+# Interactive approach
 ./bin/db-session-helper
 ```
 
 **ECS container access:**
+
 ```bash
 # Direct approach
 ./bin/ecs-connect -c my-cluster -s my-service -n web
@@ -143,6 +155,7 @@ aws-tools/
 Each tool requires specific AWS permissions. Refer to individual documentation for detailed permission requirements:
 
 **Common permissions needed:**
+
 - `ec2:DescribeInstances` - For EC2 instance discovery
 - `ssm:StartSession` - For SSM-based connections
 - `ecs:*` - For ECS operations (varies by tool)
@@ -154,14 +167,17 @@ Each tool requires specific AWS permissions. Refer to individual documentation f
 ### Common Issues
 
 1. **"Command not found" errors:**
+
    - Ensure scripts are executable: `chmod +x bin/*`
    - Check if tools are in your PATH
 
 2. **AWS credential errors:**
+
    - Verify: `aws sts get-caller-identity`
    - Configure: `aws configure`
 
 3. **Interactive selection not working:**
+
    - Install required tools: `fzf`, `fzy`, `jq`
    - Check tool availability: `which fzf fzy jq`
 
@@ -172,6 +188,7 @@ Each tool requires specific AWS permissions. Refer to individual documentation f
 ### Debug Mode
 
 Several scripts support debug flags for troubleshooting:
+
 ```bash
 ./bin/db-session-helper --debug
 ```
