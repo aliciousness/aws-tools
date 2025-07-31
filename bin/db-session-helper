@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+
+# Parse command line arguments
+DEBUG=false
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --debug)
+            DEBUG=true
+            shift
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--debug]"
+            exit 1
+            ;;
+    esac
+done
+
+# Debug function
+debug() {
+    if [ "$DEBUG" = true ]; then
+        echo "Debug: $*"
+    fi
+}
+
+# Select AWS profile
+PROFILE=$(aws configure list-profiles | fzf --prompt="Select AWS Profile: ")
+
+# exit if no profile is selected
+if [ -z "$PROFILE" ]; then
+    echo "No profile selected. Exiting."
+    exit 1
+fi
+
+echo "Selected profile: $PROFILE"
+
+# Select region
+REGION=$(echo -e "us-west-2\nus-east-1\nus-east-2\nap-southeast-1\neu-west-1" | fzf --prompt="Select Region: ")
+
+# exit if no region is selected
+if [ -z "$REGION" ]; then
+    echo "No region selected. Exiting."
+    exit 1
+fi
+
+echo "Selected region: $REGION"
+
+# Get active EC2 instances for target selection
+echo "Fetching active EC2 instances..."
+
+# Debug: Check raw output first
+if [ "$DEBUG" = true ]; then
+    debug "Raw EC2 query output:"
+    aws ec2 describe-instances \
+        --filters "Name=instance-state-name,Values=running" \
+        --query 'Reservations[*].Instances[*].[InstanceId,Tags[?Key==`Name`].Value|[0],PrivateIpAddress]' \
+        --output text \
+        --profile "$PROFILE" \
+        --region "$REGION" | head -5
+fi
+
+# Get instances with better error handling
+INSTANCES_RAW=$(aws ec2 describe-instances \
+    --filters "Name=instance-state-name,Values=running" \
+    --query 'Reservations[*].Instances[*].[InstanceId,Tags[?Key==`Name`].Value|[0],PrivateIpAddress]' \
+    --output text \
+    --profile "$PROFILE" \
+    --region "$REGION" 2>&1)
+
+if [ $? -ne 0 ]; then
+    echo "Error fetching EC2 instances: $INSTANCES_RAW"
+    exit 1
+fi
+
+if [ -z "$INSTANCES_RAW" ]; then
+    echo "No running EC2 instances found in region $REGION"
+    exit 1
+fi
+
+if [ "$DEBUG" = true ]; then
+    echo "Found instances:"
+    echo "$INSTANCES_RAW"
+fi
+
+TARGET=$(echo "$INSTANCES_RAW" | \
+    awk '{name = ($2 == "" || $2 == "None") ? "No-Name" : $2; printf "%s\t%s\t%s\n", $1, name, $3}' | \
+    column -t | \
+    fzf --prompt="Select Target EC2 Instance: " | \
+    awk '{print $1}')
+
+# exit if no target is selected
+if [ -z "$TARGET" ]; then
+    echo "No target instance selected. Exiting."
+    exit 1
+fi
+
+echo "Selected target: $TARGET"
+
+# Get RDS endpoints from Parameter Store
+echo "Fetching RDS endpoints from Parameter Store..."
+RDS_ENDPOINT_PARAM=$(aws ssm describe-parameters \
+    --query 'Parameters[?ends_with(Name, `RDS_ENDPOINT`)].Name' \
+    --output text \
+    --profile "$PROFILE" \
+    --region "$REGION" | \
+    tr '\t' '\n' | \
+    fzf --prompt="Select RDS Endpoint Parameter: ")
+
+# exit if no RDS endpoint parameter is selected
+if [ -z "$RDS_ENDPOINT_PARAM" ]; then
+    echo "No RDS endpoint parameter selected. Exiting."
+    exit 1
+fi
+
+echo "Selected RDS endpoint parameter: $RDS_ENDPOINT_PARAM"
+
+# Get the actual endpoint value
+ENDPOINT=$(aws ssm get-parameter \
+    --name "$RDS_ENDPOINT_PARAM" \
+    --query 'Parameter.Value' \
+    --output text \
+    --profile "$PROFILE" \
+    --region "$REGION")
+
+if [ -z "$ENDPOINT" ]; then
+    echo "Failed to retrieve RDS endpoint value. Exiting."
+    exit 1
+fi
+
+echo "RDS Endpoint: $ENDPOINT"
+
+# Select port
+PORT=$(echo -e "3306\n5432" | fzf --prompt="Select Database Port: ")
+
+# exit if no port is selected
+if [ -z "$PORT" ]; then
+    echo "No port selected. Exiting."
+    exit 1
+fi
+
+echo "RDS Port: $PORT"
+
+# Ask for local port (default to same as remote port)
+echo "Local port (press Enter for $PORT):"
+read -r LOCAL_PORT
+LOCAL_PORT=${LOCAL_PORT:-$PORT}
+
+echo "Local port: $LOCAL_PORT"
+
+echo ""
+echo "Starting SSM session with port forwarding..."
+echo "Target: $TARGET"
+echo "Endpoint: $ENDPOINT"
+echo "Remote Port: $PORT"
+echo "Local Port: $LOCAL_PORT"
+echo "Region: $REGION"
+echo "Profile: $PROFILE"
+echo ""
+echo "Press Ctrl+C to terminate the session."
+echo ""
+
+# Start the SSM session with port forwarding
+aws ssm start-session \
+    --target "$TARGET" \
+    --document-name "AWS-StartPortForwardingSessionToRemoteHost" \
+    --parameters "{\"host\":[\"$ENDPOINT\"], \"portNumber\":[\"$PORT\"], \"localPortNumber\":[\"$LOCAL_PORT\"]}" \
+    --region "$REGION" \
+    --profile "$PROFILE"

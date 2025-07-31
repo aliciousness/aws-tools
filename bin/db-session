@@ -1,0 +1,48 @@
+#!/usr/bin/env python3
+import argparse
+import subprocess
+
+def start_ssm_session(endpoint, port, local_port, target, region, profile):
+    command = [
+        'aws', 'ssm', 'start-session',
+        '--target', target,
+        '--document-name', 'AWS-StartPortForwardingSessionToRemoteHost',
+        '--parameters', f'{{"host":["{endpoint}"], "portNumber":["{port}"], "localPortNumber":["{local_port}"]}}',
+        '--region', region,
+        '--profile', profile
+    ]
+    
+    try:
+        subprocess.run(command)
+    except KeyboardInterrupt:
+        print("\nSession terminated by user.")
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Start an AWS SSM session with port forwarding.',
+        epilog='''
+        Example Usages:
+        1. To use the same port for both the RDS instance and the local port:
+           python start_ssm_session.py --endpoint mydb.123456789012.us-west-2.rds.amazonaws.com --port 5432
+
+        2. To specify different ports:
+           python start_ssm_session.py --endpoint mydb.123456789012.us-west-2.rds.amazonaws.com --port 5432 --local-port 6543
+        '''
+    )
+    
+    parser.add_argument('-e', '--endpoint', required=True, help='The endpoint of the RDS instance')
+    parser.add_argument('-p', '--port', type=int, required=True, help='The port number of the RDS instance')
+    parser.add_argument('-t', '--target', required=True, default='i-02b61c4bbc3946f7f', help='The target instance ID of the SSM bastion host')
+    parser.add_argument('--local-port', type=int, help='The local port number (if not specified, the same as --port)')
+    parser.add_argument('-r', '--region', default='us-west-2', help='The AWS region (default: us-west-2)')
+    parser.add_argument('-P', '--profile', default='default', help='The AWS profile to use (default: default)')
+
+    args = parser.parse_args()
+    
+    port = args.port
+    local_port = args.local_port if args.local_port else port
+
+    start_ssm_session(args.endpoint, port, local_port, args.target, args.region, args.profile)
+
+if __name__ == '__main__':
+    main()

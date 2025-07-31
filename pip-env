@@ -1,0 +1,21 @@
+#!/bin/bash
+
+# Get the directory of the script
+DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# Navigate to the scripts directory
+cd "$DIR"
+
+# remove old python environment
+rm -rf venv/
+
+# Create a virtual environment in the scripts directory
+python3 -m venv venv
+
+# Activate the virtual environment
+source venv/bin/activate
+
+# Install boto3
+pip install -r requirements.txt
+
+pip freeze > requirements.txt

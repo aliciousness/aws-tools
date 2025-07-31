@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+
+import subprocess
+import sys
+import boto3
+import os
+import argparse
+import signal
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError, ClientError, NoRegionError
+
+def handle_sigint(signum, frame):
+    """
+    Signal handler for SIGINT (Ctrl+C).
+    """
+    print("\nSIGINT received. Command interrupted, but the script will not exit.")
+    # You can add additional logic here if needed, e.g., to clean up or reset state.
+
+def check_s3_connection():
+    """
+    Verify AWS credentials by attempting to list S3 buckets.
+    Exits the script if unable to connect to S3.
+    """
+    try:
+        region = os.environ['AWS_REGION']
+        s3 = boto3.client('s3', region_name=region)
+        s3.list_buckets()
+        print("Successfully connected to S3")
+    except KeyError:
+        print("AWS_REGION environment variable not set.")
+        sys.exit(1)
+    except (NoCredentialsError, PartialCredentialsError, ClientError, NoRegionError) as e:
+        print(f"Failed to connect to S3: {str(e)}")
+        sys.exit(1)
+
+def get_task_arn_by_service(cluster_name, service_name):
+    """
+    Retrieve the first task ARN for a given cluster and service name.
+
+    Parameters:
+    - cluster_name: The name of the ECS cluster.
+    - service_name: The name of the ECS service.
+
+    Returns:
+    - The full task ARN if found; exits the script otherwise.
+    """
+    try:
+        region = os.environ['AWS_REGION']
+        ecs = boto3.client('ecs', region_name=region)
+    except KeyError:
+        print("AWS_REGION environment variable not set.")
+        sys.exit(1)
+
+    try:
+        response = ecs.list_tasks(cluster=cluster_name, serviceName=service_name)
+        if not response['taskArns']:
+            print(f"No tasks found for service {service_name} in cluster {cluster_name}")
+            sys.exit(1)
+        task_arn = response['taskArns'][0]  # Get the first task ARN
+        return task_arn
+    except ClientError as e:
+        print(f"Failed to list tasks for service {service_name} in cluster {cluster_name}: {str(e)}")
+        sys.exit(1)
+
+def execute_ecs_command(cluster_name, service_name, container_name, command):
+    """
+    Execute a command in an ECS container using ECS Exec.
+
+    Parameters:
+    - cluster_name: The name of the ECS cluster.
+    - service_name: The name of the ECS service.
+    - container_name: The name of the container in the task.
+    - command: The command to run in the container.
+    """
+    try:
+        region = os.environ['AWS_REGION']
+    except KeyError:
+        print("AWS_REGION environment variable not set.")
+        sys.exit(1)
+
+    task_arn = get_task_arn_by_service(cluster_name, service_name)
+    try:
+        subprocess.run([
+            'aws', 'ecs', 'execute-command',
+            '--region', region,
+            '--cluster', cluster_name,
+            '--task', task_arn,
+            '--container', container_name,
+            '--interactive',
+            '--command', command
+        ], check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to execute command: {str(e)}")
+        sys.exit(1)
+
+def main():
+    # Register the SIGINT handler
+    signal.signal(signal.SIGINT, handle_sigint)
+
+    parser = argparse.ArgumentParser(description="Connect to an AWS ECS container and execute a command.")
+    parser.add_argument('-c', '--cluster_name', required=True, help='The name of the ECS cluster')
+    parser.add_argument('-s', '--service_name', required=True, help='The name of the ECS service')
+    parser.add_argument('-n', '--container_name', default='app', help='The name of the container within the task (default: app)')
+    parser.add_argument('-cmd', '--command', default='/bin/bash', help='The command to execute inside the container (default: /bin/bash)')
+    parser.add_argument('-p', '--profile', help='The AWS profile to use (optional)')
+    parser.add_argument('-r', '--region', default='us-west-2', help='The AWS region to use (default: us-west-2)')
+
+    args = parser.parse_args()
+
+    # Set AWS_PROFILE environment variable if profile is provided
+    if args.profile:
+        os.environ['AWS_PROFILE'] = args.profile
+
+    # Set AWS_REGION environment variable
+    os.environ['AWS_REGION'] = args.region
+
+    # Verify AWS credentials by listing S3 buckets
+    check_s3_connection()
+
+    # Execute the specified command in the ECS container
+    execute_ecs_command(args.cluster_name, args.service_name, args.container_name, args.command)
+
+if __name__ == "__main__":
+    main()
